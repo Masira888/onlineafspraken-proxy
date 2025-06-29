@@ -2,8 +2,8 @@ export default async function handler(req, res) {
   try {
     const response = await fetch('https://api.onlineafspraken.nl/v3/public/categories', {
   headers: {
-    'apikey': process.env.API_KEY,
-    'apisecret': process.env.API_SECRET
+    'apikey': koah57olct71-klaz51,
+    'apisecret': a048b2854f2d3be24fb695d6a8d199568fc96685
   }
 });
 
