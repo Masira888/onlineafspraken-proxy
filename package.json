@@ -1,0 +1,18 @@
+{
+  "name": "documentenboekingssysteem-onlineafspraken",
+  "version": "1.0.0",
+  "main": "api/get-appointment-types.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "echo \"Building...\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "crypto-js": "^4.2.0",
+    "xml2js": "^0.6.2"
+  }
+}
