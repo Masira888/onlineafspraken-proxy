@@ -1,0 +1,18 @@
+{
+  "functions": {
+    "api/Onlineafspraken-proxy.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/Onlineafspraken-proxy",
+      "dest": "/api/Onlineafspraken-proxy.js",
+      "methods": ["POST"]
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}
