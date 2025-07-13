@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Demo Keuring</title>
+  <style>
+    /* CSS code zoals eerder opgegeven */
+    body { font-family: Arial, sans-serif; background-color: #f4f8ff; color: #003366; padding: 1rem; margin: 0; }
+    .zoeker-container { max-width: 700px; margin: auto; padding: 1rem; }
+    #zoekveld { width: 100%; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; }
+    .locatie { background: #fff; margin-top: 20px; padding: 16px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+    .locatie h3 { margin: 0 0 5px; }
+    .locatie .tijden { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0; }
+    .tijd-blok { background: #e6f2fb; padding: 6px 10px; border-radius: 8px; font-size: 14px; }
+    .kies-button { background-color: #158ab5; color: white; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .kies-button:hover { background-color: #106e91; }
+    .meer-balk { background-color: #dceefb; color: #003366; padding: 12px; margin-top: 10px; text-align: center; font-weight: bold; border-radius: 8px; animation: pulse 1.6s infinite; }
+    #toonMeerBtn { display: none; margin-top: 20px; text-align: center; }
+    #toonMeerBtn button { background-color: #158ab5; color: white; padding: 10px 18px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+    @media (max-width: 600px) { .locatie .tijden { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <div class="zoeker-container">
+    <h2>Maak een afspraak voor je keuring</h2>
+    <input type="text" id="zoekveld" placeholder="Typ je woonplaats of postcode" />
+    <div id="resultaten"></div>
+    <div id="toonMeerBtn"><button onclick="toonMeerLocaties()">Toon meer locaties</button></div>
+  </div>
+
+  <script>
+    // Google Maps API key - deze moet je hier invullen
+    // OPMERKING: Voor productie is het veiliger om ook de Google API key via een proxy te laden,
+    // maar voor nu plaatsen we hem hier voor direct testen. Beperk de API-key tot jouw domeinen.
+    const Maps_API_KEY = 'JOUW_GOOGLE_API_KEY'; // <--- VERVANG DEZE MET JE ECHTE GOOGLE API KEY!
+
+    let gebruikersLocatie = null;
+    let alleAfspraakTypen = []; // Hier slaan we de opgehaalde afspraaktypen op
+    const getoondeLocatiesInitieel = 3; // Hoeveel locaties initieel worden getoond
+    let getoondeLocatiesTeller = getoondeLocatiesInitieel; // Teller voor "Toon meer"
+
+    // Functie om de proxy aan te roepen
+    async function callOnlineAfsprakenProxy(methodName, params = {}) {
+        try {
+            const response = await fetch('/api/Onlineafspraken-proxy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json', // We sturen JSON naar onze proxy
+                },
+                body: JSON.stringify({ method: methodName, AgendaId: 44523, ...params }), // Je agenda ID hier
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('Fout bij aanroepen proxy:', errorData);
+                alert('Er ging iets mis bij het ophalen van data: ' + (errorData.message || 'Onbekende fout'));
+                return null;
+            }
+
+            const data = await response.json();
+            console.log(`Respons voor ${methodName}:`, data);
+            return data;
+        } catch (error) {
+            console.error('Netwerkfout bij aanroepen proxy:', error);
+            alert('Netwerkfout: controleer je internetverbinding of Vercel deployment.');
+            return null;
+        }
+    }
+
+    // Functie om datum en tijd mooi weer te geven
+    function dagDatumTijd(datumStr) {
+        const dagen = ["zo", "ma", "di", "wo", "do", "vr", "za"];
+        const maanden = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+        const d = new Date(datumStr);
+        const dag = dagen[d.getDay()];
+        const datum = `${d.getDate()} ${maanden[d.getMonth()]}`;
+        const tijd = d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+        return `${dag} ${datum} vanaf ${tijd}`;
+    }
+
+    // Functie om afstand te berekenen (Haversine formule)
+    function afstand(lat1, lon1, lat2, lon2) {
+        const R = 6371; // km
+        const dLat = (lat2 - lat1) * Math.PI/180;
+        const dLon = (lon2 - lon1) * Math.PI/180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    // Hoofd Render Functie: Toont locaties en tijden
+    async function renderLocaties() {
+        const container = document.getElementById("resultaten");
+        container.innerHTML = `<div class="meer-balk">Locaties en beschikbaarheid laden...</div>`; // Loading indicator
+        document.getElementById("toonMeerBtn").style.display = "none"; // Verberg de "Toon meer" knop tijdens het laden
+
+        let locatiesMetBeschikbaarheid = [];
+
+        // Haal afspraaktypen op als ze nog niet geladen zijn
+        if (alleAfspraakTypen.length === 0) {
+            const typesResponse = await callOnlineAfsprakenProxy('getAppointmentTypes');
+            if (typesResponse && typesResponse.Result && typesResponse.Result.AppointmentType) {
+                // Zorg dat AppointmentType altijd een array is, ook bij 1 resultaat
+                alleAfspraakTypen = Array.isArray(typesResponse.Result.AppointmentType) ? typesResponse.Result.AppointmentType : [typesResponse.Result.AppointmentType];
+            } else {
+                container.innerHTML = `<div class="meer-balk" style="background-color: #f8d7da; color: #721c24;">Geen afspraaktypen gevonden. Controleer de API respons of Vercel logs.</div>`;
+                return;
+            }
+        }
+
+        // FILTER & MAP: Categorieën uit OnlineAfspraken.nl koppelen aan (jouw) locatiegegevens
+        // Dit is het punt waar je de API-categorieën moet matchen met je locaties (incl. lat/lng).
+        // De API levert Category.Name op, maar geen coördinaten.
+        // Hieronder een VOORBEELD HOE JE DIT KUNT DOEN. Dit moet jij aanpassen met jouw ECHTE locatiedata.
+        const locatiesUitApiCategorieen = alleAfspraakTypen
+            .filter(type => type.Category && type.Category.Name) // Filter typen met een categorie
+            .map(type => {
+                let lat = 0, lng = 0, adres = type.Category.Name; // Standaard, te overschrijven
+
+                // BEGIN AAN TE PASSEN MAPPING LOGICA
+                // Dit is een SIMPEL VOORBEELD MAPPPING.
+                // VERVANG DIT MET JE ECHTE, ROBUUSTE LOCATIE-DATASTRUCTUUR OF LOGICA (bijv. lookup in een object/array, of Google Places API per categorie)
+                if (type.Category.Name.includes("Amsterdam")) { lat = 52.3702; lng = 4.8545; adres = "Corantijnstraat 25, Amsterdam"; }
+                else if (type.Category.Name.includes("Almere")) { lat = 52.3719; lng = 5.2228; adres = "Markerkant 13-10, Almere"; }
+                else if (type.Category.Name.includes("Haarlem")) { lat = 52.3874; lng = 4.6462; adres = "Wilhelminastraat 12, Haarlem"; }
+                else if (type.Category.Name.includes("Zaandam")) { lat = 52.4371; lng = 4.8276; adres = "Zuiddijk 85, Zaandam"; }
+                else if (type.Category.Name.includes("Utrecht")) { lat = 52.0812; lng = 5.1101; adres = "Croeselaan 6, Utrecht"; }
+                // EINDE AAN TE PASSEN MAPPING LOGICA
+
+                return {
+                    naam: type.Category.Name,
+                    adres: adres, // Nu wordt het adres ook gesimuleerd/gemapt
+                    lat: lat,
+                    lng: lng,
+                    agendaId: 44523, // Jouw vaste Agenda ID
+                    appointmentTypeId: type.Id // Het ID van dit specifieke afspraaktype
+                };
+            })
+            .filter(loc => loc.lat !== 0); // Filter locaties zonder (voorbeeld) coördinaten, zodat ze niet getoond worden
+
+        // Loop door de locaties en haal beschikbaarheid op
+        for (const loc of locatiesUitApiCategorieen) {
+            if (gebruikersLocatie) {
+                loc.afstand = afstand(gebruikersLocatie.lat, gebruikersLocatie.lng, loc.lat, loc.lng);
+            } else {
+                loc.afstand = 0; // Geen afstand als gebruikerslocatie onbekend is
+            }
+
+            // Haal boekbare dagen op
+            const bookableDaysResponse = await callOnlineAfsprakenProxy('getBookableDays', {
+                AppointmentTypeId: loc.appointmentTypeId,
+                ResourceId: 0, // 0 voor alle resources, of specifieke resource ID indien van toepassing
+                StartDate: new Date().toISOString().slice(0, 10), // Vandaag als startdatum (yyyy-mm-dd)
+                EndDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10) // Tot 1 jaar in de toekomst
+            });
+
+            let tijdenVoorLocatie = [];
+            if (bookableDaysResponse && bookableDaysResponse.Result && bookableDaysResponse.Result.BookableDay) {
+                const bookableDays = Array.isArray(bookableDaysResponse.Result.BookableDay) ? bookableDaysResponse.Result.BookableDay : [bookableDaysResponse.Result.BookableDay];
+
+                // We willen de eerste 3 data, dus loop door de dagen
+                for (let i = 0; i < Math.min(3, bookableDays.length); i++) {
+                    const day = bookableDays[i];
+                    // Haal de tijden op voor deze specifieke dag
+                    const bookableTimesResponse = await callOnlineAfsprakenProxy('getBookableTimes', {
+                        AppointmentTypeId: loc.appointmentTypeId,
+                        Date: day.Date, // Gebruik de datum van de boekbare dag
+                        ResourceId: 0 // Weer 0 voor alle resources
+                    });
+
+                    if (bookableTimesResponse && bookableTimesResponse.Result && bookableTimesResponse.Result.BookableTime) {
+                        const bookableTimes = Array.isArray(bookableTimesResponse.Result.BookableTime) ? bookableTimesResponse.Result.BookableTime : [bookableTimesResponse.Result.BookableTime];
+                        if (bookableTimes.length > 0) {
+                            // Neem de eerste tijd voor die dag om de "Vanaf Tijd Locatie" te bepalen
+                            tijdenVoorLocatie.push(`${day.Date}T${bookableTimes[0].Time}`);
+                        }
+                    }
+                }
+            }
+            loc.tijden = tijdenVoorLocatie; // Voeg de opgehaalde tijden toe aan de locatie
+            locatiesMetBeschikbaarheid.push(loc);
+        }
+
+        // Sorteer op afstand en render
+        const gesorteerd = locatiesMetBeschikbaarheid.sort((a, b) => a.afstand - b.afstand);
+
+        container.innerHTML = ""; // Leeg de container
+        gesorteerd.slice(0, getoondeLocatiesTeller).forEach((loc, index) => {
+            const div = document.createElement("div");
+            div.className = "locatie";
+            // DEZE LINK IS NU VASTGESTELD NAAR JOUW VOORKEUR. PAS DEZE HANDMATIG AAN INDIEN NODIG.
+            const bookingUrlBase = `https://keuringgrootrijbewijs.nl/afspraak-maken/`;
+
+            div.innerHTML = `
+                <h3>${loc.naam} (${loc.afstand.toFixed(1)} km)</h3>
+                <p>${loc.adres}</p>
+                <div class="tijden">
+                    ${loc.tijden.slice(0, 3).map(t => `<span class="tijd-blok">${dagDatumTijd(t)}</span>`).join("")}
+                </div>
+                <button class="kies-button" onclick="window.location.href='${bookingUrlBase}'">Maak een afspraak</button>
+                ${index === 0 && gesorteerd.length > 1 ? `<div class="meer-balk">↓ Scroll naar beneden voor meer locaties en beschikbare data</div>` : ''}
+            `;
+            container.appendChild(div);
+        });
+
+        if (getoondeLocatiesTeller < locatiesMetBeschikbaarheid.length) {
+            document.getElementById("toonMeerBtn").style.display = "block";
+        } else {
+            document.getElementById("toonMeerBtn").style.display = "none";
+        }
+
+         if (locatiesMetBeschikbaarheid.length === 0 && gebruikersLocatie) {
+            container.innerHTML = `<div class="meer-balk">Geen beschikbare locaties/tijden gevonden voor je zoekopdracht.</div>`;
+        } else if (locatiesMetBeschikbaarheid.length === 0) {
+            container.innerHTML = `<div class="meer-balk">Laden van locaties mislukt of er zijn geen beschikbare locaties.</div>`;
+        }
+    }
+
+    function toonMeerLocaties() {
+        getoondeLocatiesTeller += getoondeLocatiesInitieel; // Toon 3 extra locaties
+        renderLocaties(); // Render opnieuw met meer locaties
+    }
+
+    // Initialiseer Google Autocomplete en render locaties na laden
+    function initAutocomplete() {
+        const input = document.getElementById('zoekveld');
+        const autocomplete = new google.maps.places.Autocomplete(input, {
+            types: ['geocode'],
+            componentRestrictions: { country: 'nl' }
+        });
+
+        autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+            if (place.geometry) {
+                gebruikersLocatie = {
+                    lat: place.geometry.location.lat(),
+                    lng: place.geometry.location.lng()
+                };
+                getoondeLocatiesTeller = getoondeLocatiesInitieel; // Reset bij nieuwe zoekopdracht
+                renderLocaties(); // Render locaties opnieuw met nieuwe gebruikerslocatie
+            }
+        });
+
+        // Initieel laden van locaties wanneer de pagina laadt
+        renderLocaties();
+    }
+
+    // Deze publieke API key is niet langer direct gebruikt voor de booking URL in de front-end
+    // maar zou nog wel relevant kunnen zijn voor andere integraties als OnlineAfspraken.nl deze vereist.
+    // Voor nu laten we hem staan, maar de bookingUrlBase is hardcoded.
+    const ONLINE_AFSPRAKEN_API_KEY_PUBLIC = 'koah57olct71-klaz51';
+  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBfNr9YI7ba6kVZdQDLNDvs82NNo5TtXb0&libraries=places&callback=initAutocomplete" async defer></script>
+</body>
+</html>

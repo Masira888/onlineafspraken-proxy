@@ -1,170 +1,127 @@
-// api/onlineafspraken-proxy.js
+// api/Onlineafspraken-proxy.js
 
-import axios from 'axios';
-import CryptoJS from 'crypto-js';
+const crypto = require('crypto'); // Node.js ingebouwde module voor cryptografie
+const { XMLParser } = require('fast-xml-parser'); // Vereist: `npm install fast-xml-parser`
 
-export default async function handler(req, res) {
-    // NIEUWE DEBUGGING LOGS: Controleren of environment variables worden gelezen
-    console.log("--- Starting Proxy Handler ---");
-    console.log("Environment Variables (from process.env):");
-    console.log(`ONLINE_AFSPRAKEN_API_KEY: ${process.env.ONLINE_AFSPRAKEN_API_KEY ? 'Loaded' : 'Not Loaded'}`);
-    console.log(`ONLINE_AFSPRAKEN_API_SECRET: ${process.env.ONLINE_AFSPRAKEN_API_SECRET ? 'Loaded' : 'Not Loaded'}`);
-    console.log(`ONLINE_AFSPRAKEN_AGENDA_ID: ${process.env.ONLINE_AFSPRAKEN_AGENDA_ID || 'Not Provided'}`);
-    console.log("-----------------------------");
+// Haal de API keys uit omgevingsvariabelen van Vercel.
+// DEZE VARIABELEN MOET JE LATER IN VERCEL INSTELLEn!
+const ONLINE_AFSPRAKEN_API_KEY = process.env.ONLINE_AFSPRAKEN_API_KEY;
+const ONLINE_AFSPRAKEN_API_SECRET = process.env.ONLINE_AFSPRAKEN_API_SECRET;
+const ONLINE_AFSPRAKEN_AGENDA_ID = process.env.ONLINE_AFSPRAKEN_AGENDA_ID;
 
+// Configureer de XML parser
+const xmlParserOptions = {
+    ignoreAttributes: false, // We willen attributen zoals <Id> meenemen
+    attributeNameProcessors: [(name) => name.startsWith('@_') ? name.substring(2) : name], // Verwijder de `@_` prefix van attributen
+    // Dit zorgt ervoor dat elementen die meerdere keren kunnen voorkomen, altijd als arrays worden geparsed
+    // zelfs als er maar één element is, wat consistentie biedt.
+    isArray: (tagName, jPath, is=false) => {
+        // Pas dit aan als je merkt dat specifieke elementen niet goed geparsed worden als array
+        // Voor nu, aanname dat 'AppointmentType', 'BookableDay', 'BookableTime' vaak meerdere kunnen zijn
+        if (['AppointmentType', 'BookableDay', 'BookableTime'].indexOf(tagName) !== -1) return true;
+        return is;
+    }
+};
+const parser = new XMLParser(xmlParserOptions);
+
+module.exports = async (req, res) => {
+    // Zorg ervoor dat het een POST-aanvraag is
     if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method Not Allowed', message: 'Only POST requests are accepted.' });
+        res.status(405).json({ error: 'Method Not Allowed', message: 'Deze proxy accepteert alleen POST-aanvragen.' });
+        return;
+    }
+
+    // Controleer of de API Keys zijn ingesteld
+    if (!ONLINE_AFSPRAKEN_API_KEY || !ONLINE_AFSPRAKEN_API_SECRET || !ONLINE_AFSPRAKEN_AGENDA_ID) {
+        res.status(500).json({ error: 'Server Configuration Error', message: 'API keys zijn niet geconfigureerd in Vercel omgevingsvariabelen.' });
+        return;
     }
 
     try {
-        const ONLINE_AFSPRAKEN_API_KEY = process.env.ONLINE_AFSPRAKEN_API_KEY;
-        const ONLINE_AFSPRAKEN_API_SECRET = process.env.ONLINE_AFSPRAKEN_API_SECRET;
-        const ONLINE_AFSPRAKEN_AGENDA_ID = process.env.ONLINE_AFSPRAKEN_AGENDA_ID;
+        // De POST-body bevat de parameters voor de API-aanroep
+        const requestBody = req.body;
 
-        // Eerste controle voor ontbrekende sleutels (deze genereert de fout die je eerder zag)
-        if (!ONLINE_AFSPRAKEN_API_KEY || !ONLINE_AFSPRAKEN_API_SECRET) {
-            console.error("[Proxy Error] Missing API Key or Secret in environment variables. Check .env.local or Vercel UI.");
-            return res.status(500).json({ error: 'Server Configuration Error', message: 'API Key or Secret is missing. Please check Vercel Environment Variables.' });
-        }
-
-        const API_URL = "https://agenda.onlineafspraken.nl/APIREST";
+        // Genereer api_salt (timestamp in seconden)
         const apiSalt = Math.floor(Date.now() / 1000);
 
-        const requestedMethodFromFrontend = req.body.method;
-        let paramsForSigning = {};
-        let oaApiMethod = requestedMethodFromFrontend; // Standaard is de OA API methode gelijk aan de frontend methode
+        // Bereid parameters voor de signatuurberekening voor
+        // Kopieer alle parameters behalve api_key, api_salt, api_signature
+        const paramsForSigning = { ...requestBody };
+        delete paramsForSigning.api_key;
+        delete paramsForSigning.api_salt;
+        delete paramsForSigning.api_signature;
 
-        console.log(`[Proxy] Received request for method from frontend: ${requestedMethodFromFrontend}`);
-
-        switch (requestedMethodFromFrontend) {
-            case 'getAppointmentType':
-                oaApiMethod = "getAppointmentTypes";
-                paramsForSigning = {
-                    method: oaApiMethod,
-                };
-                break;
-
-            case 'getAgendas': // NIEUWE CASE VOOR HET OPHALEN VAN ALLE AGENDA'S/KALENDERS
-                oaApiMethod = "getAgendas";
-                paramsForSigning = {
-                    method: oaApiMethod,
-                };
-                break;
-
-            case 'getBookableDays':
-                const { appointmentTypeId: abd_appointmentTypeId, resourceId: abd_resourceId, startDate: abd_startDate, endDate: abd_endDate, agendaId: abd_agendaId } = req.body;
-
-                if (!abd_appointmentTypeId) {
-                    return res.status(400).json({ error: 'Bad Request', message: 'appointmentTypeId is required for getBookableDays.' });
-                }
-                // Controleer of AgendaId aanwezig is (uit body of env var)
-                if (!abd_agendaId && !ONLINE_AFSPRAKEN_AGENDA_ID) {
-                    return res.status(400).json({ error: 'Bad Request', message: 'Valid AgendaId is required for getBookableDays (either in request body or environment variables).' });
-                }
-
-                oaApiMethod = "getBookableDays";
-                paramsForSigning = {
-                    method: oaApiMethod,
-                    AgendaId: abd_agendaId || ONLINE_AFSPRAKEN_AGENDA_ID, // Gebruik AgendaId uit body of uit env var.
-                    AppointmentTypeId: abd_appointmentTypeId,
-                };
-
-                if (abd_resourceId) {
-                    paramsForSigning.ResourceId = abd_resourceId;
-                }
-                if (abd_startDate) {
-                    paramsForSigning.StartDate = abd_startDate;
-                }
-                if (abd_endDate) {
-                    paramsForSigning.EndDate = abd_endDate;
-                }
-                break;
-
-            case 'getBookableTimes':
-                const { agendaId: abt_agendaId, date: abt_date, appointmentTypeId: abt_appointmentTypeId, resourceId: abt_resourceId, endDate: abt_endDate } = req.body;
-
-                if (!abt_date || !abt_appointmentTypeId) {
-                    return res.status(400).json({ error: 'Bad Request', message: 'Date and AppointmentTypeId are required for getBookableTimes.' });
-                }
-                // Controleer of AgendaId aanwezig is (uit body of env var)
-                if (!abt_agendaId && !ONLINE_AFSPRAKEN_AGENDA_ID) {
-                    return res.status(400).json({ error: 'Bad Request', message: 'Valid AgendaId is required for getBookableTimes (either in request body or environment variables).' });
-                }
-
-                oaApiMethod = "getBookableTimes";
-                paramsForSigning = {
-                    method: oaApiMethod,
-                    AgendaId: abt_agendaId || ONLINE_AFSPRAKEN_AGENDA_ID, // Gebruik AgendaId uit body of uit env var.
-                    Date: abt_date,
-                    AppointmentTypeId: abt_appointmentTypeId,
-                };
-
-                if (abt_resourceId) {
-                    paramsForSigning.ResourceId = abt_resourceId;
-                }
-                if (abt_endDate) {
-                    paramsForSigning.EndDate = abt_endDate;
-                }
-                break;
-
-            default:
-                return res.status(400).json({ error: 'Bad Request', message: `Unknown or unsupported API method: ${requestedMethodFromFrontend}` });
+        // Zorg ervoor dat de method parameter erin zit
+        if (!paramsForSigning.method) {
+            res.status(400).json({ error: 'Bad Request', message: 'De "method" parameter is verplicht.' });
+            return;
         }
 
-        // --- Signature berekening ---
+        // Sorteer de keys alfabetisch en bouw de string om te signeren
         const sortedKeys = Object.keys(paramsForSigning).sort();
         let stringToSign = "";
         for (const key of sortedKeys) {
             stringToSign += key + paramsForSigning[key];
         }
+
         stringToSign += ONLINE_AFSPRAKEN_API_SECRET;
         stringToSign += apiSalt.toString();
-        const apiSignature = CryptoJS.SHA256(stringToSign).toString();
 
-        console.log(`[Proxy] String to sign: ${stringToSign}`);
-        console.log(`[Proxy] Calculated Signature: ${apiSignature}`);
+        // Bereken de api_signature met SHA256
+        const apiSignature = crypto.createHash('sha256').update(stringToSign).digest('hex');
 
-        // --- Request body constructie voor de OnlineAfspraken.nl API ---
-        const requestBody = new URLSearchParams();
-        requestBody.append('method', oaApiMethod);
+        // Bouw de uiteindelijke request body voor OnlineAfspraken.nl
+        const finalApiRequestBody = new URLSearchParams();
         for (const key in paramsForSigning) {
-            if (Object.prototype.hasOwnProperty.call(paramsForSigning, key) && key !== 'method') {
-                requestBody.append(key, paramsForSigning[key]);
+            if (paramsForSigning.hasOwnProperty(key)) {
+                finalApiRequestBody.append(key, paramsForSigning[key]);
             }
         }
-        requestBody.append('api_salt', apiSalt.toString());
-        requestBody.append('api_signature', apiSignature);
-        requestBody.append('api_key', ONLINE_AFSPRAKEN_API_KEY);
+        finalApiRequestBody.append('api_key', ONLINE_AFSPRAKEN_API_KEY);
+        finalApiRequestBody.append('api_salt', apiSalt);
+        finalApiRequestBody.append('api_signature', apiSignature);
 
-        console.log(`[Proxy] Sending request to OA API with body: ${requestBody.toString()}`);
-
-        const response = await axios.post(API_URL, requestBody.toString(), {
+        // Roept de externe OnlineAfspraken.nl API aan
+        const apiResponse = await fetch('https://agenda.onlineafspraken.nl/APIREST', {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': '*/*', // Accept every type of response.
+                'Accept': 'application/xml' // We vragen expliciet XML aan, gezien de API die levert
             },
+            body: finalApiRequestBody.toString(),
         });
 
-        // Send the received data (expected XML) directly back to the client.
-        res.setHeader('Content-Type', 'application/xml');
-        res.status(200).send(response.data);
-        console.log(`[Proxy] Successfully sent response back to client for method: ${requestedMethodFromFrontend}`);
+        // Controleer op HTTP fouten van de API zelf
+        if (!apiResponse.ok) {
+            const errorText = await apiResponse.text(); // Lees de rauwe respons voor debugging
+            console.error('Error from OnlineAfspraken.nl API:', apiResponse.status, errorText);
+            res.status(apiResponse.status).json({
+                error: 'API Request Failed',
+                message: `OnlineAfspraken.nl API gaf een fout: ${apiResponse.statusText}`,
+                details: errorText,
+                statusCode: apiResponse.status
+            });
+            return;
+        }
+
+        // Lees de XML respons
+        const xmlText = await apiResponse.text();
+
+        // Converteer XML naar JSON
+        let jsonData;
+        try {
+            jsonData = parser.parse(xmlText);
+        } catch (xmlError) {
+            console.error('Fout bij parsen XML respons:', xmlError);
+            res.status(500).json({ error: 'XML Parsing Error', message: 'Kon XML respons niet parsen.', details: xmlText });
+            return;
+        }
+
+        // Stuur de geconverteerde JSON-respons door naar de front-end
+        res.status(200).json(jsonData);
 
     } catch (error) {
-        console.error("[Proxy] Error in OnlineAfspraken proxy:", error.message);
-
-        // Detailed error handling.
-        if (error.response) {
-            console.error("[Proxy] API Response Data:", error.response.data);
-            console.error("[Proxy] API Response Status:", error.response.status);
-            // Try to return the status code and data from the external API.
-            res.status(error.response.status).send(error.response.data);
-        } else if (error.request) {
-            console.error("[Proxy] No response received from API:", error.request);
-            res.status(500).json({ error: 'No response from API', message: 'The request was made but no response was received from the OnlineAfspraken API. Check network or API availability.' });
-        } else {
-            console.error("[Proxy] Request setup error:", error.message);
-            res.status(500).json({ error: 'Internal Server Error', message: 'An unexpected error occurred during request setup: ' + error.message });
-        }
+        console.error('Fout in Onlineafspraken-proxy:', error);
+        res.status(500).json({ error: 'Internal Server Error', message: error.message });
     }
-}
+};
