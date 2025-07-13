@@ -33,10 +33,11 @@
 
     <script>
         // CONFIGURATIE
-        const Maps_API_KEY = 'AIzaSyBfNr9YI7ba6kVZdQDLNDvs82NNo5TtXb0'; // <-- VERVANG DEZE
+        const Maps_API_KEY = 'JOUW_GOOGLE_API_KEY'; // <-- VERVANG DEZE MET JE ECHTE, BEPERKTE GOOGLE KEY
         const AGENDA_ID = 44523;
 
         // Dit is de MAPPING van de API categorie naar jouw locatiegegevens.
+        // PAS DEZE NAMEN AAN ALS ZE NIET OVEREENKOMEN MET DE CATEGORIEEN IN JOUW ONLINEAFSPRAKEN.NL ACCOUNT
         const locatieStamdata = {
             "Amsterdam West": { adres: "Corantijnstraat 25, Amsterdam", lat: 52.3702, lng: 4.8545 },
             "Almere": { adres: "Markerkant 13-10, Almere", lat: 52.3719, lng: 5.2228 },
@@ -55,7 +56,9 @@
         function dagDatumTijd(datumStr) {
             if (!datumStr) return '';
             const d = new Date(datumStr);
-            return d.toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+            const opties = { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
+            // Gebruik 'nl-NL' locale voor correcte dag- en maandnamen
+            return d.toLocaleString('nl-NL', opties);
         }
 
         function afstand(lat1, lon1, lat2, lon2) {
@@ -69,17 +72,26 @@
 
         async function callProxy(methodName, params = {}) {
             try {
-                const response = await fetch('/api/Onlineafspraken-proxy', {
+                // *** DIT IS DE AANGEPASTE REGEL VOOR NETLIFY ***
+                const response = await fetch('/.netlify/functions/Onlineafspraken-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ method: methodName, AgendaId: AGENDA_ID, ...params }),
                 });
+                
+                if (!response.ok) {
+                    // Probeer de fout als tekst te lezen, omdat het geen JSON hoeft te zijn
+                    const errorText = await response.text();
+                    console.error('API-fout status:', response.status, 'Body:', errorText);
+                    throw new Error(`API fout: ${response.statusText}`);
+                }
+
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.message || 'API fout');
                 return data;
             } catch (error) {
                 console.error(`Fout bij aanroepen ${methodName}:`, error);
-                return null;
+                // Gooi de fout door zodat de aanroepende functie weet dat er iets misging
+                throw error;
             }
         }
 
@@ -88,35 +100,43 @@
             const container = document.getElementById("resultaten");
             container.innerHTML = `<div class="status-balk">Locaties laden...</div>`;
             
-            const typesResponse = await callProxy('getAppointmentTypes');
-            if (!typesResponse || !typesResponse.Result || !typesResponse.Result.AppointmentType) {
-                container.innerHTML = `<div class="status-balk error-balk">Geen afspraaktypen gevonden.</div>`;
-                return;
-            }
+            try {
+                const typesResponse = await callProxy('getAppointmentTypes');
+                if (!typesResponse || !typesResponse.Result || !typesResponse.Result.AppointmentType) {
+                    container.innerHTML = `<div class="status-balk error-balk">Geen afspraaktypen gevonden. Controleer de Netlify Function logs.</div>`;
+                    return;
+                }
+                
+                const appointmentTypes = Array.isArray(typesResponse.Result.AppointmentType)
+                    ? typesResponse.Result.AppointmentType
+                    : [typesResponse.Result.AppointmentType];
 
-            alleLocatiesData = typesResponse.Result.AppointmentType
-                .map(type => {
-                    const categoryName = type.Category?.Name;
-                    const stamdata = locatieStamdata[categoryName];
-                    if (categoryName && stamdata) {
-                        return {
-                            id: `locatie-${type.Id}`,
-                            naam: categoryName,
-                            adres: stamdata.adres,
-                            lat: stamdata.lat,
-                            lng: stamdata.lng,
-                            appointmentTypeId: type.Id,
-                            bookingUrl: type.BookingUrl,
-                            tijden: null, // Nog onbekend
-                            afstand: 0
-                        };
-                    }
-                    return null;
-                })
-                .filter(loc => loc !== null);
-            
-            renderLocatieSkelet(); // Toon de locaties zonder tijden
-            laadBeschikbaarheidVoorZichtbareLocaties(); // Haal tijden op
+                alleLocatiesData = appointmentTypes
+                    .map(type => {
+                        const categoryName = type.Category?.Name;
+                        const stamdata = locatieStamdata[categoryName];
+                        if (categoryName && stamdata) {
+                            return {
+                                id: `locatie-${type.Id}`,
+                                naam: categoryName,
+                                adres: stamdata.adres,
+                                lat: stamdata.lat,
+                                lng: stamdata.lng,
+                                appointmentTypeId: type.Id,
+                                bookingUrl: type.BookingUrl, // We krijgen deze URL uit de API
+                                tijden: null, // Nog onbekend
+                                afstand: 0
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(loc => loc !== null);
+                
+                renderLocatieSkelet(); // Toon de locaties zonder tijden
+                laadBeschikbaarheidVoorZichtbareLocaties(); // Haal tijden op
+            } catch (error) {
+                container.innerHTML = `<div class="status-balk error-balk">Fout bij het laden van locaties. Controleer de browser console en Netlify Function logs.</div>`;
+            }
         }
 
         function renderLocatieSkelet() {
@@ -129,6 +149,11 @@
             }
 
             const teTonenLocaties = alleLocatiesData.slice(0, getoondeLocatiesTeller);
+
+            if (teTonenLocaties.length === 0) {
+                container.innerHTML = `<div class="status-balk">Geen locaties gevonden.</div>`;
+                return;
+            }
 
             teTonenLocaties.forEach(loc => {
                 const afstandHTML = gebruikersLocatie ? `(${loc.afstand.toFixed(1)} km)` : '';
@@ -163,29 +188,38 @@
         }
         
         async function laadTijdenVoorEenLocatie(loc) {
-            const today = new Date().toISOString().split('T')[0];
-            const daysResponse = await callProxy('getBookableDays', { 
-                AppointmentTypeId: loc.appointmentTypeId,
-                StartDate: today
-            });
-            
             let gevondenTijden = [];
-            if (daysResponse?.Result?.BookableDay) {
-                const bookableDays = daysResponse.Result.BookableDay.slice(0, 3);
-                const timePromises = bookableDays.map(async (day) => {
-                    const timesResponse = await callProxy('getBookableTimes', {
-                        AppointmentTypeId: loc.appointmentTypeId,
-                        Date: day.Date
-                    });
-                    if (timesResponse?.Result?.BookableTime) {
-                        return `${day.Date}T${timesResponse.Result.BookableTime[0].StartTime}`;
-                    }
-                    return null;
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const daysResponse = await callProxy('getBookableDays', { 
+                    AppointmentTypeId: loc.appointmentTypeId,
+                    StartDate: today
                 });
-                gevondenTijden = (await Promise.all(timePromises)).filter(t => t);
+                
+                if (daysResponse?.Result?.BookableDay) {
+                    const bookableDays = (Array.isArray(daysResponse.Result.BookableDay) ? daysResponse.Result.BookableDay : [daysResponse.Result.BookableDay]).slice(0, 3);
+                    const timePromises = bookableDays.map(async (day) => {
+                        const timesResponse = await callProxy('getBookableTimes', {
+                            AppointmentTypeId: loc.appointmentTypeId,
+                            Date: day.Date
+                        });
+                        if (timesResponse?.Result?.BookableTime) {
+                            const bookableTimes = Array.isArray(timesResponse.Result.BookableTime) ? timesResponse.Result.BookableTime : [timesResponse.Result.BookableTime];
+                            if (bookableTimes.length > 0) {
+                                // Combineren van datum en starttijd voor een volledig datum-tijd object
+                                return `${day.Date}T${bookableTimes[0].StartTime}`;
+                            }
+                        }
+                        return null;
+                    });
+                    gevondenTijden = (await Promise.all(timePromises)).filter(t => t);
+                }
+            } catch (error) {
+                console.error(`Kon tijden niet laden voor ${loc.naam}:`, error);
+                // We tonen geen fout per locatie, maar loggen het wel
             }
 
-            loc.tijden = gevondenTijden; // Sla de data op
+            loc.tijden = gevondenTijden; // Sla de data op (ook als het een lege array is)
             updateLocatieTijdenInDOM(loc); // Werk de HTML bij
         }
 
@@ -223,7 +257,7 @@
                         lng: place.geometry.location.lng()
                     };
                     getoondeLocatiesTeller = getoondeLocatiesInitieel;
-                    renderLocatieSkelet(); // Her-render met afstanden en sortering
+                    renderLocatieSkelet(); 
                     laadBeschikbaarheidVoorZichtbareLocaties();
                 }
             });
@@ -231,6 +265,7 @@
             laadInitiëleLocaties();
         }
 
+        // Dynamisch laden van de Google Maps script
         const script = document.createElement('script');
         script.src = `https://maps.googleapis.com/maps/api/js?key=${Maps_API_KEY}&libraries=places&callback=initAutocomplete`;
         script.async = true;
