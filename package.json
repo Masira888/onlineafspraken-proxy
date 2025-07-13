@@ -1,11 +1,4 @@
 {
-  "name": "onlineafspraken-project",
-  "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "fast-xml-parser": "^4.4.0"
-  },
-  "scripts": {
-    "start": "vercel dev"
-  }
+  "name": "vercel-test-project",
+  "version": "1.0.0"
 }
