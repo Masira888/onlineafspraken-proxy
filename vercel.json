@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/Onlineafspraken-proxy.js": {
-      "runtime": "nodejs@18.x"
+      "runtime": "node18.x"
     }
   },
   "routes": [
