@@ -1,261 +1,261 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Maak een afspraak</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f8ff; color: #003366; padding: 1rem; margin: 0; }
-        .zoeker-container { max-width: 700px; margin: auto; padding: 1rem; }
-        #zoekveld { width: 100%; box-sizing: border-box; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; }
-        .locatie { background: #fff; margin-top: 20px; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: transform 0.2s; }
-        .locatie:hover { transform: translateY(-3px); }
-        .locatie h3 { margin: 0 0 5px; }
-        .locatie p { margin: 0 0 15px; color: #557; }
-        .locatie .tijden { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0; min-height: 40px; }
-        .tijd-blok, .loading-blok { background: #e6f2fb; padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: 500; }
-        .loading-blok { color: #888; }
-        .kies-button { background-color: #158ab5; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; width: 100%; margin-top: 15px; }
-        .kies-button:hover { background-color: #106e91; }
-        .status-balk { background-color: #dceefb; color: #003366; padding: 12px; margin-top: 20px; text-align: center; font-weight: bold; border-radius: 8px; }
-        .error-balk { background-color: #f8d7da; color: #721c24; }
-        #toonMeerBtn { display: none; margin-top: 20px; text-align: center; }
-        #toonMeerBtn button { background-color: #005a87; color: white; padding: 12px 20px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Maak een afspraak</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f8ff; color: #003366; padding: 1rem; margin: 0; }
+.zoeker-container { max-width: 700px; margin: auto; padding: 1rem; }
+#zoekveld { width: 100%; box-sizing: border-box; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; }
+.locatie { background: #fff; margin-top: 20px; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: transform 0.2s; }
+.locatie:hover { transform: translateY(-3px); }
+.locatie h3 { margin: 0 0 5px; }
+.locatie p { margin: 0 0 15px; color: #557; }
+.locatie .tijden { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0; min-height: 40px; }
+.tijd-blok, .loading-blok { background: #e6f2fb; padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: 500; }
+.loading-blok { color: #888; }
+.kies-button { background-color: #158ab5; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold;
+width: 100%; margin-top: 15px; }
+.kies-button:hover { background-color: #106e91; }
+.status-balk { background-color: #dceefb; color: #003366; padding: 12px; margin-top: 20px; text-align: center; font-weight: bold; border-radius: 8px; }
+.error-balk { background-color: #f8d7da; color: #721c24; }
+#toonMeerBtn { display: none; margin-top: 20px; text-align: center; }
+#toonMeerBtn button { background-color: #005a87; color: white; padding: 12px 20px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+</style>
 </head>
 <body>
-    <div class="zoeker-container">
-        <h2>Vind een afspraaklocatie</h2>
-        <input type="text" id="zoekveld" placeholder="Typ je woonplaats of postcode..." />
-        <div id="resultaten"></div>
-        <div id="toonMeerBtn"><button onclick="toonMeerLocaties()">Toon meer locaties</button></div>
-    </div>
+<div class="zoeker-container">
+<h2>Vind een afspraaklocatie</h2>
+<input type="text" id="zoekveld" placeholder="Typ je woonplaats of postcode..." />
+<div id="resultaten"></div>
+<div id="toonMeerBtn"><button onclick="toonMeerLocaties()">Toon meer locaties</button></div>
+</div>
+<script>
+// Wacht tot de hele HTML-pagina volledig is geladen voordat we de scripts uitvoeren.
+document.addEventListener('DOMContentLoaded', () => {
 
-    <script>
-        // Wacht tot de hele HTML-pagina volledig is geladen voordat we de scripts uitvoeren.
-        document.addEventListener('DOMContentLoaded', () => {
-    
-            // CONFIGURATIE
-            const Maps_API_KEY = 'AIzaSyBfNr9YI7ba6kVZdQDLNDvs82NNo5TtXb0'; // <-- VERVANG DEZE
-            const AGENDA_ID = 44523;
-    
-            const locatieStamdata = {
-                "Amsterdam West": { adres: "Corantijnstraat 25, Amsterdam", lat: 52.3702, lng: 4.8545 },
-                "Almere": { adres: "Markerkant 13-10, Almere", lat: 52.3719, lng: 5.2228 },
-                "Haarlem": { adres: "Wilhelminastraat 12, Haarlem", lat: 52.3874, lng: 4.6462 },
-                "Zaandam": { adres: "Zuiddijk 85, Zaandam", lat: 52.4371, lng: 4.8276 },
-                "Utrecht": { adres: "Croeselaan 6, Utrecht", lat: 52.0812, lng: 5.1101 }
-            };
-    
-            let gebruikersLocatie = null;
-            let alleLocatiesData = [];
-            const getoondeLocatiesInitieel = 3;
-            let getoondeLocatiesTeller = getoondeLocatiesInitieel;
-    
-            function dagDatumTijd(datumStr) {
-                if (!datumStr) return '';
-                const d = new Date(datumStr);
-                const opties = { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
-                return d.toLocaleString('nl-NL', opties);
-            }
-    
-            function afstand(lat1, lon1, lat2, lon2) {
-                const R = 6371;
-                const dLat = (lat2 - lat1) * Math.PI / 180;
-                const dLon = (lon2 - lon1) * Math.PI / 180;
-                const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                return R * c;
-            }
-    
-            async function callProxy(methodName, params = {}) {
-                try {
-                    const response = await fetch('/api/Onlineafspraken-proxy', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ method: methodName, AgendaId: AGENDA_ID, ...params }),
-                    });
-                    
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        console.error('API-fout status:', response.status, 'Body:', errorText);
-                        throw new Error(`API fout: ${response.statusText}`);
-                    }
-    
-                    return await response.json();
-                } catch (error) {
-                    console.error(`Fout bij aanroepen ${methodName}:`, error);
-                    throw error;
-                }
-            }
-    
-            async function laadInitiëleLocaties() {
-                const container = document.getElementById("resultaten");
-                container.innerHTML = `<div class="status-balk">Locaties laden...</div>`;
-                
-                try {
-                    const typesResponse = await callProxy('getAppointmentTypes');
-                    if (!typesResponse || !typesResponse.Result || !typesResponse.Result.AppointmentType) {
-                        container.innerHTML = `<div class="status-balk error-balk">Geen afspraaktypen gevonden. Controleer de Netlify Function logs.</div>`;
-                        return;
-                    }
-                    
-                    const appointmentTypes = Array.isArray(typesResponse.Result.AppointmentType)
-                        ? typesResponse.Result.AppointmentType
-                        : [typesResponse.Result.AppointmentType];
-    
-                    alleLocatiesData = appointmentTypes
-                        .map(type => {
-                            const categoryName = type.Category?.Name;
-                            const stamdata = locatieStamdata[categoryName];
-                            if (categoryName && stamdata) {
-                                return {
-                                    id: `locatie-${type.Id}`,
-                                    naam: categoryName,
-                                    adres: stamdata.adres,
-                                    lat: stamdata.lat,
-                                    lng: stamdata.lng,
-                                    appointmentTypeId: type.Id,
-                                    bookingUrl: type.BookingUrl,
-                                    tijden: null,
-                                    afstand: 0
-                                };
-                            }
-                            return null;
-                        })
-                        .filter(loc => loc !== null);
-                    
-                    renderLocatieSkelet();
-                    laadBeschikbaarheidVoorZichtbareLocaties();
-                } catch (error) {
-                    container.innerHTML = `<div class="status-balk error-balk">Fout bij het laden van locaties. Controleer de browser console en Netlify Function logs.</div>`;
-                }
-            }
-    
-            function renderLocatieSkelet() {
-                const container = document.getElementById("resultaten");
-                container.innerHTML = "";
-    
-                if (gebruikersLocatie) {
-                    alleLocatiesData.forEach(loc => loc.afstand = afstand(gebruikersLocatie.lat, gebruikersLocatie.lng, loc.lat, loc.lng));
-                    alleLocatiesData.sort((a, b) => a.afstand - b.afstand);
-                }
-    
-                const teTonenLocaties = alleLocatiesData.slice(0, getoondeLocatiesTeller);
-    
-                if (teTonenLocaties.length === 0) {
-                    container.innerHTML = `<div class="status-balk">Geen locaties gevonden.</div>`;
-                    return;
-                }
-    
-                teTonenLocaties.forEach(loc => {
-                    const afstandHTML = gebruikersLocatie ? `(${loc.afstand.toFixed(1)} km)` : '';
-                    const div = document.createElement("div");
-                    div.className = "locatie";
-                    div.id = loc.id;
-                    div.innerHTML = `
-                        <h3>${loc.naam} ${afstandHTML}</h3>
-                        <p>${loc.adres}</p>
-                        <div class="tijden">
-                            <span class="loading-blok">Beschikbaarheid wordt geladen...</span>
-                        </div>
-                        <button class="kies-button" onclick="window.open('${loc.bookingUrl}', '_blank')">Maak een afspraak</button>
-                    `;
-                    container.appendChild(div);
-                });
-    
-                const toonMeerBtn = document.getElementById("toonMeerBtn");
-                toonMeerBtn.style.display = getoondeLocatiesTeller < alleLocatiesData.length ? "block" : "none";
-            }
-    
-            async function laadBeschikbaarheidVoorZichtbareLocaties() {
-                const teTonenLocaties = alleLocatiesData.slice(0, getoondeLocatiesTeller);
-                for (const loc of teTonenLocaties) {
-                    if (loc.tijden !== null) continue; 
-                    laadTijdenVoorEenLocatie(loc);
-                }
-            }
-            
-            async function laadTijdenVoorEenLocatie(loc) {
-                let gevondenTijden = [];
-                try {
-                    const today = new Date().toISOString().split('T')[0];
-                    const daysResponse = await callProxy('getBookableDays', { 
-                        AppointmentTypeId: loc.appointmentTypeId,
-                        StartDate: today
-                    });
-                    
-                    if (daysResponse?.Result?.BookableDay) {
-                        const bookableDays = (Array.isArray(daysResponse.Result.BookableDay) ? daysResponse.Result.BookableDay : [daysResponse.Result.BookableDay]).slice(0, 3);
-                        const timePromises = bookableDays.map(async (day) => {
-                            const timesResponse = await callProxy('getBookableTimes', {
-                                AppointmentTypeId: loc.appointmentTypeId,
-                                Date: day.Date
-                            });
-                            if (timesResponse?.Result?.BookableTime) {
-                                const bookableTimes = Array.isArray(timesResponse.Result.BookableTime) ? timesResponse.Result.BookableTime : [timesResponse.Result.BookableTime];
-                                if (bookableTimes.length > 0) {
-                                    return `${day.Date}T${bookableTimes[0].StartTime}`;
-                                }
-                            }
-                            return null;
-                        });
-                        gevondenTijden = (await Promise.all(timePromises)).filter(t => t);
-                    }
-                } catch (error) {
-                    console.error(`Kon tijden niet laden voor ${loc.naam}:`, error);
-                }
-                loc.tijden = gevondenTijden;
-                updateLocatieTijdenInDOM(loc);
-            }
-    
-            function updateLocatieTijdenInDOM(loc) {
-                const locatieDiv = document.getElementById(loc.id);
-                if (!locatieDiv) return;
-                const tijdenContainer = locatieDiv.querySelector('.tijden');
-                const tijdenHTML = loc.tijden.length > 0
-                    ? loc.tijden.map(t => `<span class="tijd-blok">${dagDatumTijd(t)}</span>`).join("")
-                    : `<span class="loading-blok">Geen tijden gevonden</span>`;
-                tijdenContainer.innerHTML = tijdenHTML;
-            }
-    
-            window.toonMeerLocaties = function() { // Maak globaal beschikbaar
-                getoondeLocatiesTeller += 3;
-                renderLocatieSkelet();
-                laadBeschikbaarheidVoorZichtbareLocaties();
-            }
-    
-            // INITIALISATIE (wordt aangeroepen door Google Maps callback)
-            window.initAutocomplete = function() {
-                const input = document.getElementById('zoekveld');
-                const autocomplete = new google.maps.places.Autocomplete(input, {
-                    types: ['geocode'],
-                    componentRestrictions: { country: 'nl' }
-                });
-    
-                autocomplete.addListener('place_changed', () => {
-                    const place = autocomplete.getPlace();
-                    if (place.geometry) {
-                        gebruikersLocatie = {
-                            lat: place.geometry.location.lat(),
-                            lng: place.geometry.location.lng()
-                        };
-                        getoondeLocatiesTeller = getoondeLocatiesInitieel;
-                        renderLocatieSkelet(); 
-                        laadBeschikbaarheidVoorZichtbareLocaties();
-                    }
-                });
-                
-                laadInitiëleLocaties();
-            }
-    
-            // Dynamisch laden van de Google Maps script
-            const script = document.createElement('script');
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${Maps_API_KEY}&libraries=places&callback=initAutocomplete`;
-            script.defer = true; // Gebruik defer ipv async voor betere controle
-            document.head.appendChild(script);
-            
-        });
-    </script>
+// CONFIGURATIE
+const Maps_API_KEY = 'AIzaSyBfNr9YI7ba6kVZdQDLNDvs82NNo5TtXb0'; // <-- VERVANG DEZE MET JE ECHTE GOOGLE API KEY!
+const AGENDA_ID = 44523;
+
+const locatieStamdata = {
+"Amsterdam West": { adres: "Corantijnstraat 25, Amsterdam", lat: 52.3702, lng: 4.8545 },
+"Almere": { adres: "Markerkant 13-10, Almere", lat: 52.3719, lng: 5.2228 },
+"Haarlem": { adres: "Wilhelminastraat 12, Haarlem", lat: 52.3874, lng: 4.6462 },
+"Zaandam": { adres: "Zuiddijk 85, Zaandam", lat: 52.4371, lng: 4.8276 },
+"Utrecht": { adres: "Croeselaan 6, Utrecht", lat: 52.0812, lng: 5.1101 }
+};
+
+let gebruikersLocatie = null;
+let alleLocatiesData = [];
+const getoondeLocatiesInitieel = 3;
+let getoondeLocatiesTeller = getoondeLocatiesInitieel;
+
+function dagDatumTijd(datumStr) {
+if (!datumStr) return '';
+const d = new Date(datumStr);
+const opties = { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
+return d.toLocaleString('nl-NL', opties);
+}
+
+function afstand(lat1, lon1, lat2, lon2) {
+const R = 6371;
+const dLat = (lat2 - lat1) * Math.PI / 180;
+const dLon = (lon2 - lon1) * Math.PI / 180;
+const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+return R * c;
+}
+
+async function callProxy(methodName, params = {}) {
+try {
+const response = await fetch('/api/Onlineafspraken-proxy', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ method: methodName, AgendaId: AGENDA_ID, ...params }),
+});
+
+if (!response.ok) {
+const errorText = await response.text();
+console.error('API-fout status:', response.status, 'Body:', errorText);
+throw new Error(`API fout: ${response.statusText}`);
+}
+
+return await response.json();
+} catch (error) {
+console.error(`Fout bij aanroepen ${methodName}:`, error);
+throw error;
+}
+}
+
+async function laadInitiëleLocaties() {
+const container = document.getElementById("resultaten");
+container.innerHTML = `<div class="status-balk">Locaties laden...</div>`;
+
+try {
+const typesResponse = await callProxy('getAppointmentTypes');
+if (!typesResponse || !typesResponse.Result || !typesResponse.Result.AppointmentType) {
+container.innerHTML = `<div class="status-balk error-balk">Geen afspraaktypen gevonden. Controleer de Netlify Function logs.</div>`;
+return;
+}
+
+const appointmentTypes = Array.isArray(typesResponse.Result.AppointmentType)
+? typesResponse.Result.AppointmentType
+: [typesResponse.Result.AppointmentType];
+
+alleLocatiesData = appointmentTypes
+.map(type => {
+const categoryName = type.Category?.Name;
+const stamdata = locatieStamdata[categoryName];
+if (categoryName && stamdata) {
+return {
+id: `locatie-${type.Id}`,
+naam: categoryName,
+adres: stamdata.adres,
+lat: stamdata.lat,
+lng: stamdata.lng,
+appointmentTypeId: type.Id,
+bookingUrl: type.BookingUrl,
+tijden: null,
+afstand: 0
+};
+}
+return null;
+})
+.filter(loc => loc !== null);
+
+renderLocatieSkelet();
+laadBeschikbaarheidVoorZichtbareLocaties();
+} catch (error) {
+container.innerHTML = `<div class="status-balk error-balk">Fout bij het laden van locaties. Controleer de browser console en Netlify Function logs.</div>`;
+}
+}
+
+function renderLocatieSkelet() {
+const container = document.getElementById("resultaten");
+container.innerHTML = "";
+
+if (gebruikersLocatie) {
+alleLocatiesData.forEach(loc => loc.afstand = afstand(gebruikersLocatie.lat, gebruikersLocatie.lng, loc.lat, loc.lng));
+alleLocatiesData.sort((a, b) => a.afstand - b.afstand);
+}
+
+const teTonenLocaties = alleLocatiesData.slice(0, getoondeLocatiesTeller);
+
+if (teTonenLocaties.length === 0) {
+container.innerHTML = `<div class="status-balk">Geen locaties gevonden.</div>`;
+return;
+}
+
+teTonenLocaties.forEach(loc => {
+const afstandHTML = gebruikersLocatie ? `(${loc.afstand.toFixed(1)} km)` : '';
+const div = document.createElement("div");
+div.className = "locatie";
+div.id = loc.id;
+div.innerHTML = `
+<h3>${loc.naam} ${afstandHTML}</h3>
+<p>${loc.adres}</p>
+<div class="tijden">
+<span class="loading-blok">Beschikbaarheid wordt geladen...</span>
+</div>
+<button class="kies-button" onclick="window.open('${loc.bookingUrl}', '_blank')">Maak een afspraak</button>
+`;
+container.appendChild(div);
+});
+
+const toonMeerBtn = document.getElementById("toonMeerBtn");
+toonMeerBtn.style.display = getoondeLocatiesTeller < alleLocatiesData.length ? "block" : "none";
+}
+
+async function laadBeschikbaarheidVoorZichtbareLocaties() {
+const teTonenLocaties = alleLocatiesData.slice(0, getoondeLocatiesTeller);
+for (const loc of teTonenLocaties) {
+if (loc.tijden !== null) continue;
+laadTijdenVoorEenLocatie(loc);
+}
+}
+
+async function laadTijdenVoorEenLocatie(loc) {
+let gevondenTijden = [];
+try {
+const today = new Date().toISOString().split('T')[0];
+const daysResponse = await callProxy('getBookableDays', {
+AppointmentTypeId: loc.appointmentTypeId,
+StartDate: today
+});
+
+if (daysResponse?.Result?.BookableDay) {
+const bookableDays = (Array.isArray(daysResponse.Result.BookableDay) ? daysResponse.Result.BookableDay : [daysResponse.Result.BookableDay]).slice(0, 3);
+const timePromises = bookableDays.map(async (day) => {
+const timesResponse = await callProxy('getBookableTimes', {
+AppointmentTypeId: loc.appointmentTypeId,
+Date: day.Date
+});
+if (timesResponse?.Result?.BookableTime) {
+const bookableTimes = Array.isArray(timesResponse.Result.BookableTime) ? timesResponse.Result.BookableTime : [timesResponse.Result.BookableTime];
+if (bookableTimes.length > 0) {
+return `${day.Date}T${bookableTimes[0].StartTime}`;
+}
+}
+return null;
+});
+gevondenTijden = (await Promise.all(timePromises)).filter(t => t);
+}
+} catch (error) {
+console.error(`Kon tijden niet laden voor ${loc.naam}:`, error);
+}
+loc.tijden = gevondenTijden;
+updateLocatieTijdenInDOM(loc);
+}
+
+function updateLocatieTijdenInDOM(loc) {
+const locatieDiv = document.getElementById(loc.id);
+if (!locatieDiv) return;
+const tijdenContainer = locatieDiv.querySelector('.tijden');
+const tijdenHTML = loc.tijden.length > 0
+? loc.tijden.map(t => `<span class="tijd-blok">${dagDatumTijd(t)}</span>`).join("")
+: `<span class="loading-blok">Geen tijden gevonden</span>`;
+tijdenContainer.innerHTML = tijdenHTML;
+}
+
+window.toonMeerLocaties = function() {
+getoondeLocatiesTeller += 3;
+renderLocatieSkelet();
+laadBeschikbaarheidVoorZichtbareLocaties();
+}
+
+// INITIALISATIE (wordt aangeroepen door Google Maps callback)
+window.initAutocomplete = function() {
+const input = document.getElementById('zoekveld');
+const autocomplete = new google.maps.places.Autocomplete(input, {
+types: ['geocode'],
+componentRestrictions: { country: 'nl' }
+});
+
+autocomplete.addListener('place_changed', () => {
+const place = autocomplete.getPlace();
+if (place.geometry) {
+gebruikersLocatie = {
+lat: place.geometry.location.lat(),
+lng: place.geometry.location.lng()
+};
+getoondeLocatiesTeller = getoondeLocatiesInitieel;
+renderLocatieSkelet();
+laadBeschikbaarheidVoorZichtbareLocaties();
+}
+});
+
+laadInitiëleLocaties();
+}
+
+// Dynamisch laden van de Google Maps script
+const script = document.createElement('script');
+script.src = `https://maps.googleapis.com/maps/api/js?key=${Maps_API_KEY}&libraries=places&callback=initAutocomplete`;
+script.defer = true;
+document.head.appendChild(script);
+
+});
+</script>
 </body>
 </html>

@@ -6,6 +6,6 @@
     "fast-xml-parser": "^4.4.0"
   },
   "scripts": {
-    "start": "vercel dev"
+    "start": "node api/Onlineafspraken-proxy.js"
   }
 }
