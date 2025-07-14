@@ -1,7 +1,8 @@
-// api/Onlineafspraken-proxy.js
+// api/onlineafspraken-proxy.js
 const crypto = require('crypto');
 const { XMLParser } = require('fast-xml-parser');
 
+// Haal de API keys uit omgevingsvariabelen van Netlify.
 const ONLINE_AFSPRAKEN_API_KEY = process.env.ONLINE_AFSPRAKEN_API_KEY;
 const ONLINE_AFSPRAKEN_API_SECRET = process.env.ONLINE_AFSPRAKEN_API_SECRET;
 const ONLINE_AFSPRAKEN_AGENDA_ID = process.env.ONLINE_AFSPRAKEN_AGENDA_ID;
@@ -28,9 +29,14 @@ module.exports = async (req, res) => {
     }
 
     try {
+        // Lees de body van de aanvraag (die van je frontend komt)
         const requestBody = req.body;
+        
+        // Genereer api_salt (timestamp in seconden)
         const apiSalt = Math.floor(Date.now() / 1000);
 
+        // Bereid parameters voor de signatuurberekening voor
+        // Kopieer alle parameters behalve api_key, api_salt, api_signature
         const paramsForSigning = { ...requestBody };
         delete paramsForSigning.api_key;
         delete paramsForSigning.api_salt;
@@ -41,6 +47,7 @@ module.exports = async (req, res) => {
             return;
         }
 
+        // Sorteer de keys alfabetisch en bouw de string om te signeren
         const sortedKeys = Object.keys(paramsForSigning).sort();
         let stringToSign = "";
         for (const key of sortedKeys) {
@@ -49,8 +56,10 @@ module.exports = async (req, res) => {
         stringToSign += ONLINE_AFSPRAKEN_API_SECRET;
         stringToSign += apiSalt.toString();
 
+        // Bereken de api_signature met SHA256
         const apiSignature = crypto.createHash('sha256').update(stringToSign).digest('hex');
 
+        // Bouw de uiteindelijke request body voor OnlineAfspraken.nl API
         const finalApiRequestBody = new URLSearchParams();
         for (const key in paramsForSigning) {
             if (paramsForSigning.hasOwnProperty(key)) {
@@ -61,17 +70,19 @@ module.exports = async (req, res) => {
         finalApiRequestBody.append('api_salt', apiSalt);
         finalApiRequestBody.append('api_signature', apiSignature);
 
+        // Roept de externe OnlineAfspraken.nl API aan
         const apiResponse = await fetch('https://agenda.onlineafspraken.nl/APIREST', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': 'application/xml'
+                'Accept': 'application/xml' // We vragen expliciet XML aan, gezien de API die levert
             },
             body: finalApiRequestBody.toString(),
         });
 
+        // Controleer op HTTP fouten van de API zelf
         if (!apiResponse.ok) {
-            const errorText = await apiResponse.text();
+            const errorText = await apiResponse.text(); // Lees de rauwe respons voor debugging
             console.error('Error from OnlineAfspraken.nl API:', apiResponse.status, errorText);
             res.status(apiResponse.status).json({
                 error: 'API Request Failed',
@@ -82,7 +93,10 @@ module.exports = async (req, res) => {
             return;
         }
 
+        // Lees de XML respons
         const xmlText = await apiResponse.text();
+        
+        // Converteer XML naar JSON
         let jsonData;
         try {
             jsonData = parser.parse(xmlText);
@@ -92,9 +106,11 @@ module.exports = async (req, res) => {
             return;
         }
 
+        // Stuur de geconverteerde JSON-respons door naar de front-end
         res.status(200).json(jsonData);
+
     } catch (error) {
-        console.error('Fout in Onlineafspraken-proxy:', error);
+        console.error('Fout in onlineafspraken-proxy:', error); // AANGEPAST NAAR KLEINE LETTERS
         res.status(500).json({ error: 'Internal Server Error', message: error.message });
     }
 };

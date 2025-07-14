@@ -32,11 +32,10 @@ width: 100%; margin-top: 15px; }
 <div id="toonMeerBtn"><button onclick="toonMeerLocaties()">Toon meer locaties</button></div>
 </div>
 <script>
-// Wacht tot de hele HTML-pagina volledig is geladen voordat we de scripts uitvoeren.
 document.addEventListener('DOMContentLoaded', () => {
 
 // CONFIGURATIE
-const Maps_API_KEY = 'AIzaSyBfNr9YI7ba6kVZdQDLNDvs82NNo5TtXb0'; // <-- VERVANG DEZE MET JE ECHTE GOOGLE API KEY!
+const Maps_API_KEY = 'AIzaSyBfNr9YI7ba6kVZdQDLNDvs82NNo5TtXb0'; // Controleer of dit je ECHTE Google Maps API Key is!
 const AGENDA_ID = 44523;
 
 const locatieStamdata = {
@@ -70,7 +69,7 @@ return R * c;
 
 async function callProxy(methodName, params = {}) {
 try {
-const response = await fetch('/api/Onlineafspraken-proxy', {
+const response = await fetch('/api/onlineafspraken-proxy', { // AANGEPAST NAAR KLEINE LETTERS
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ method: methodName, AgendaId: AGENDA_ID, ...params }),
@@ -225,7 +224,6 @@ renderLocatieSkelet();
 laadBeschikbaarheidVoorZichtbareLocaties();
 }
 
-// INITIALISATIE (wordt aangeroepen door Google Maps callback)
 window.initAutocomplete = function() {
 const input = document.getElementById('zoekveld');
 const autocomplete = new google.maps.places.Autocomplete(input, {
@@ -249,7 +247,6 @@ laadBeschikbaarheidVoorZichtbareLocaties();
 laadInitiëleLocaties();
 }
 
-// Dynamisch laden van de Google Maps script
 const script = document.createElement('script');
 script.src = `https://maps.googleapis.com/maps/api/js?key=${Maps_API_KEY}&libraries=places&callback=initAutocomplete`;
 script.defer = true;
