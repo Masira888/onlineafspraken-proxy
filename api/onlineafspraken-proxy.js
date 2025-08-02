@@ -1,35 +1,54 @@
-// api/onlineafspraken-proxy.js
 const crypto = require('crypto');
 const { XMLParser } = require('fast-xml-parser');
 
-// Haal de API keys uit omgevingsvariabelen van Netlify.
-const ONLINE_AFSPRAKEN_API_KEY = process.env.ONLINE_AFSPRAKEN_API_KEY;
-const ONLINE_AFSPRAKEN_API_SECRET = process.env.ONLINE_AFSPRAKEN_API_SECRET;
-const ONLINE_AFSPRAKEN_AGENDA_ID = process.env.ONLINE_AFSPRAKEN_AGENDA_ID;
+// Get API keys from environment variables (as set in Netlify dashboard)
+// const ONLINE_AFSPRAKEN_API_KEY = process.env.ONLINE_AFSPRAKEN_API_KEY;
+// const ONLINE_AFSPRAKEN_API_SECRET = process.env.ONLINE_AFSPRAKEN_API_SECRET;
+// const ONLINE_AFSPRAKEN_AGENDA_ID = process.env.ONLINE_AFSPRAKEN_AGENDA_ID;
 
+const ONLINE_AFSPRAKEN_API_KEY = 'koah57olct71-klaz51';
+const ONLINE_AFSPRAKEN_API_SECRET = 'a048b2854f2d3be24fb695d6a8d199568fc96685';
+const ONLINE_AFSPRAKEN_AGENDA_ID = '44523';
+
+
+// XML parser configuration
 const xmlParserOptions = {
     ignoreAttributes: false,
     attributeNameProcessors: [(name) => name.startsWith('@_') ? name.substring(2) : name],
-    isArray: (tagName, jPath, is=false) => {
-        if (['AppointmentType', 'BookableDay', 'BookableTime'].indexOf(tagName) !== -1) return true;
-        return is;
-    }
+    isArray: (tagName, jPath, is=false) => ['AppointmentType', 'BookableDay', 'BookableTime'].includes(tagName) || is
 };
 const parser = new XMLParser(xmlParserOptions);
 
-module.exports = async (req, res) => { // DEZE REGEL IS CRUCIAAL
-    if (req.method !== 'POST') {
-        res.status(405).json({ error: 'Method Not Allowed', message: 'Deze proxy accepteert alleen POST-aanvragen.' });
-        return;
+// NETLIFY FUNCTION EXPORT!
+exports.handler = async function(event, context) {
+    // Only allow POST
+    if (event.httpMethod !== 'POST') {
+        return {
+            statusCode: 405,
+            body: JSON.stringify({ error: 'Method Not Allowed', message: 'This proxy only accepts POST requests.' })
+        };
     }
 
+    // Check if API keys are set
     if (!ONLINE_AFSPRAKEN_API_KEY || !ONLINE_AFSPRAKEN_API_SECRET || !ONLINE_AFSPRAKEN_AGENDA_ID) {
-        res.status(500).json({ error: 'Server Configuration Error', message: 'API keys zijn niet geconfigureerd in Netlify omgevingsvariabelen.' });
-        return;
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Server Configuration Error', message: 'API keys are not set in environment variables.' })
+        };
     }
 
     try {
-        const requestBody = req.body;
+        let requestBody;
+        try {
+            requestBody = JSON.parse(event.body || '{}');
+            console.log(requestBody);
+            
+        } catch (e) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid JSON', message: 'The body could not be parsed as valid JSON.' })
+            };
+        }
         const apiSalt = Math.floor(Date.now() / 1000);
 
         const paramsForSigning = { ...requestBody };
@@ -38,8 +57,10 @@ module.exports = async (req, res) => { // DEZE REGEL IS CRUCIAAL
         delete paramsForSigning.api_signature;
 
         if (!paramsForSigning.method) {
-            res.status(400).json({ error: 'Bad Request', message: 'De "method" parameter is verplicht.' });
-            return;
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Bad Request', message: 'The "method" parameter is required.' })
+            };
         }
 
         const sortedKeys = Object.keys(paramsForSigning).sort();
@@ -73,14 +94,15 @@ module.exports = async (req, res) => { // DEZE REGEL IS CRUCIAAL
 
         if (!apiResponse.ok) {
             const errorText = await apiResponse.text();
-            console.error('Error from OnlineAfspraken.nl API:', apiResponse.status, errorText);
-            res.status(apiResponse.status).json({
-                error: 'API Request Failed',
-                message: `OnlineAfspraken.nl API gaf een fout: ${apiResponse.statusText}`,
-                details: errorText,
-                statusCode: apiResponse.status
-            });
-            return;
+            return {
+                statusCode: apiResponse.status,
+                body: JSON.stringify({
+                    error: 'API Request Failed',
+                    message: `OnlineAfspraken.nl API error: ${apiResponse.statusText}`,
+                    details: errorText,
+                    statusCode: apiResponse.status
+                })
+            };
         }
 
         const xmlText = await apiResponse.text();
@@ -88,15 +110,21 @@ module.exports = async (req, res) => { // DEZE REGEL IS CRUCIAAL
         try {
             jsonData = parser.parse(xmlText);
         } catch (xmlError) {
-            console.error('Fout bij parsen XML respons:', xmlError);
-            res.status(500).json({ error: 'XML Parsing Error', message: 'Kon XML respons niet parsen.', details: xmlText });
-            return;
+            return {
+                statusCode: 500,
+                body: JSON.stringify({ error: 'XML Parsing Error', message: 'Could not parse XML response.', details: xmlText })
+            };
         }
 
-        res.status(200).json(jsonData);
+        return {
+            statusCode: 200,
+            body: JSON.stringify(jsonData)
+        };
 
     } catch (error) {
-        console.error('Fout in onlineafspraken-proxy:', error);
-        res.status(500).json({ error: 'Internal Server Error', message: error.message });
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Internal Server Error', message: error.message })
+        };
     }
 };
