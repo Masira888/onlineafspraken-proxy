@@ -2,13 +2,9 @@ const crypto = require('crypto');
 const { XMLParser } = require('fast-xml-parser');
 
 // Get API keys from environment variables (as set in Netlify dashboard)
-// const ONLINE_AFSPRAKEN_API_KEY = process.env.ONLINE_AFSPRAKEN_API_KEY;
-// const ONLINE_AFSPRAKEN_API_SECRET = process.env.ONLINE_AFSPRAKEN_API_SECRET;
-// const ONLINE_AFSPRAKEN_AGENDA_ID = process.env.ONLINE_AFSPRAKEN_AGENDA_ID;
-
-const ONLINE_AFSPRAKEN_API_KEY = 'koah57olct71-klaz51';
-const ONLINE_AFSPRAKEN_API_SECRET = 'a048b2854f2d3be24fb695d6a8d199568fc96685';
-const ONLINE_AFSPRAKEN_AGENDA_ID = '44523';
+const ONLINE_AFSPRAKEN_API_KEY = process.env.ONLINE_AFSPRAKEN_API_KEY;
+const ONLINE_AFSPRAKEN_API_SECRET = process.env.ONLINE_AFSPRAKEN_API_SECRET;
+const ONLINE_AFSPRAKEN_AGENDA_ID = process.env.ONLINE_AFSPRAKEN_AGENDA_ID;
 
 
 // XML parser configuration
@@ -41,7 +37,6 @@ exports.handler = async function(event, context) {
         let requestBody;
         try {
             requestBody = JSON.parse(event.body || '{}');
-            console.log(requestBody);
             
         } catch (e) {
             return {

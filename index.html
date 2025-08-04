@@ -199,7 +199,6 @@
                     // Only call .json() ONCE
                     const data = await response.json();
 
-                    // console.log(data);
                     if (!response.ok) {
                         console.error('API-error:', response.status, data);
                         throw new Error(data.message || 'API error');
@@ -218,7 +217,6 @@
                 try {
                     const typesResponse = await callProxy('getAppointmentTypes');
 
-                    // console.log(Array.isArray(typesResponse.Response.Objects.AppointmentType));
                     if (!typesResponse || !typesResponse.Response.Objects || !typesResponse.Response.Objects.AppointmentType) {
                         container.innerHTML = `<div class="status-balk error-balk">Geen afspraaktypen gevonden. Controleer de Netlify Function logs.</div>`;
                         return;
@@ -228,16 +226,15 @@
                         ? typesResponse.Response.Objects.AppointmentType
                         : [typesResponse.Response.Objects.AppointmentType];
 
-                    // console.log(appointmentTypes);
                     
                     alleLocatiesData = appointmentTypes
                         .map(type => {
                             // const categoryName = type.Category?.Name;
                             const categoryName = type.Category?.[0];
-                            // console.log(categoryName);
+                            
                             const cityKey = categoryName.split(":")[0].trim();
                             const stamdata = locatieStamdata[cityKey];
-                            // console.log(stamdata);
+                            
                             if (categoryName && stamdata) {
                                 return {
                                     id: `locatie-${type.Id}`,
@@ -364,7 +361,7 @@
                     const endDateObj = new Date(today);
                     endDateObj.setDate(endDateObj.getDate() + 30);
                     const endDate = endDateObj.toISOString().split('T')[0];
-                    console.log(loc.appointmentTypeId[0]);               
+                    // console.log(loc.appointmentTypeId[0]);               
                     const daysResponse = await callProxy('getBookableDays', {
                         AppointmentTypeId: loc.appointmentTypeId[0],
                         StartDate: startDate,
@@ -375,7 +372,7 @@
                     if (daysResponse?.Response?.Objects?.BookableDay) {
                         
                         const bookableDays = (Array.isArray(daysResponse.Response.Objects.BookableDay) ? daysResponse.Response.Objects.BookableDay : [daysResponse.Response.Objects.BookableDay]).slice(0, 3);
-                        console.log(bookableDays);
+                        // console.log(bookableDays);
                         const timePromises = bookableDays.map(async (day) => {
                             const timesResponse = await callProxy('getBookableTimes', {
                                 AppointmentTypeId: loc.appointmentTypeId,
@@ -384,7 +381,7 @@
                             
                             if (timesResponse?.Response?.Objects?.BookableTime) {
                                 const bookableTimes = Array.isArray(timesResponse.Response.Objects.BookableTime) ? timesResponse.Response.Objects.BookableTime : [timesResponse.Response.Objects.BookableTime];
-                                console.log(bookableTimes);
+                                // console.log(bookableTimes);
                                 if (bookableTimes.length > 0) {
                                     return `${day.Date[0]}T${bookableTimes[0].StartTime[0]}`;
                                 }
@@ -452,8 +449,6 @@
                         // Sort by distance
                         nearbyLocaties.sort((a, b) => a.afstand - b.afstand);
                         
-                        // console.log(nearbyLocaties);
-
                         if (nearbyLocaties.length === 0) {
                             document.getElementById("resultaten").innerHTML = `<div class="status-balk">Geen locaties binnen 5 kilometer gevonden.</div>`;
                         } else {
