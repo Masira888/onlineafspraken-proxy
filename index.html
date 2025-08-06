@@ -437,20 +437,28 @@
                             lat: place.geometry.location.lat(),
                             lng: place.geometry.location.lng()
                         };
+
+                        // Show loading message
+                        const container = document.getElementById("resultaten");
+                        container.innerHTML = `<div class="status-balk">Locaties laden...</div>`;
                         
-                        // Filter locaties within 5 km
+                        try {
+                        laadInitiëleLocaties();
+
+                        // Filter locaties within 500 km
                         const nearbyLocaties = alleLocatiesData
                             .map(loc => {
                                 const dist = afstand(gebruikersLocatie.lat, gebruikersLocatie.lng, loc.lat, loc.lng);
                                 return { ...loc, afstand: dist };
                             })
-                            .filter(loc => loc.afstand <= 5);
+                            .filter(loc => loc.afstand <= 500);
 
                         // Sort by distance
                         nearbyLocaties.sort((a, b) => a.afstand - b.afstand);
                         
                         if (nearbyLocaties.length === 0) {
-                            document.getElementById("resultaten").innerHTML = `<div class="status-balk">Geen locaties binnen 5 kilometer gevonden.</div>`;
+                            // document.getElementById("resultaten").innerHTML = `<div class="status-balk">Geen locaties binnen 500 kilometer gevonden.</div>`;
+                            document.getElementById("resultaten").innerHTML = `<div class="status-balk">Locaties laden...</div>`;
                         } else {
                             // Replace `alleLocatiesData` with nearby locations temporarily
                             getoondeLocatiesTeller = nearbyLocaties.length;
@@ -459,10 +467,15 @@
                             // renderLocatieSkelet();
                             // laadBeschikbaarheidVoorZichtbareLocaties();
                         }
+                        } catch (error) {
+                            container.innerHTML = `<div class="status-balk error-balk">Fout bij het laden van locaties.</div>`;
+                            console.error("Fout bij laden van locaties:", error);
+                        }
                     }
                 });
 
-                laadInitiëleLocaties();
+
+                // laadInitiëleLocaties();  
             }
 
             const script = document.createElement('script');
