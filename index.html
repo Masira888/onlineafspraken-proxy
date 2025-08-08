@@ -146,7 +146,7 @@
 
             let gebruikersLocatie = null;
             let alleLocatiesData = [];
-            const getoondeLocatiesInitieel = 3;
+            const getoondeLocatiesInitieel = 10;
             let getoondeLocatiesTeller = getoondeLocatiesInitieel;
 
             function dagDatumTijd(datumStr) {
@@ -165,29 +165,7 @@
                 return R * c;
             }
 
-            // async function callProxy(methodName, params = {}) {
-            //     try {
-            //         const response = await fetch('/api/onlineafspraken-proxy', { // AANGEPAST NAAR KLEINE LETTERS
-            //             method: 'POST',
-            //             headers: { 'Content-Type': 'application/json' },
-            //             body: JSON.stringify({ method: methodName, AgendaId: AGENDA_ID, ...params }),
-            //         });
-
-            //         const result = await response.json();
-            //         console.log(result);
-
-            //         if (!response.ok) {
-            //             const errorText = await response.text();
-            //             console.error('API-fout status:', response.status, 'Body:', errorText);
-            //             throw new Error(`API fout: ${response.statusText}`);
-            //         }
-
-            //         return await response.json();
-            //     } catch (error) {
-            //         console.error(`Fout bij aanroepen ${methodName}:`, error);
-            //         throw error;
-            //     }
-            // }
+            
             async function callProxy(methodName, params = {}) {
                 try {
                     const response = await fetch('/api/onlineafspraken-proxy', {
@@ -216,7 +194,7 @@
 
                 try {
                     const typesResponse = await callProxy('getAppointmentTypes');
-
+                    console.log(typesResponse);
                     if (!typesResponse || !typesResponse.Response.Objects || !typesResponse.Response.Objects.AppointmentType) {
                         container.innerHTML = `<div class="status-balk error-balk">Geen afspraaktypen gevonden. Controleer de Netlify Function logs.</div>`;
                         return;
@@ -234,7 +212,7 @@
                             
                             const cityKey = categoryName.split(":")[0].trim();
                             const stamdata = locatieStamdata[cityKey];
-                            
+                            const fullname = type.Name?.[0];
                             if (categoryName && stamdata) {
                                 return {
                                     id: `locatie-${type.Id}`,
@@ -242,6 +220,7 @@
                                     adres: stamdata.adres,
                                     lat: stamdata.lat,
                                     lng: stamdata.lng,
+                                    fullName: fullname,
                                     appointmentTypeId: type.Id,
                                     bookingUrl: type.BookingUrl,
                                     tijden: null,
@@ -291,6 +270,7 @@
                     div.id = loc.id;
                     div.innerHTML = `
 <h3>${loc.naam} ${afstandTekst}</h3>
+<p>${loc.fullName}</p>
 <p>${loc.adres}</p>
 <div class="tijden">
 <span class="loading-blok">Beschikbaarheid wordt geladen...</span>
@@ -359,7 +339,7 @@
                     const startDate = today.toISOString().split('T')[0];
 
                     const endDateObj = new Date(today);
-                    endDateObj.setDate(endDateObj.getDate() + 30);
+                    endDateObj.setDate(endDateObj.getDate() + 180);
                     const endDate = endDateObj.toISOString().split('T')[0];
                     // console.log(loc.appointmentTypeId[0]);               
                     const daysResponse = await callProxy('getBookableDays', {
@@ -408,7 +388,7 @@
             }
 
             window.toonMeerLocaties = function () {
-                getoondeLocatiesTeller += 3;
+                getoondeLocatiesTeller += 10;
                 renderLocatieSkelet();
                 laadBeschikbaarheidVoorZichtbareLocaties();
             }
