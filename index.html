@@ -138,13 +138,7 @@
             // const GEWENST_AFSPRAAKTYPE_NAAM = process.env.GEWENST_AFSPRAAKTYPE_NAAM;
 
             const GEWENST_AFSPRAAKTYPE_NAAM = "Combikeuring CDE/geneeskundige verklaring personenvervoer";
-            const locatieStamdata = {
-                "Amsterdam West": { adres: "Corantijnstraat 25, Amsterdam", lat: 52.3702, lng: 4.8545 },
-                "Almere": { adres: "Markerkant 13-10, Almere", lat: 52.3719, lng: 5.2228 },
-                "Haarlem": { adres: "Wilhelminastraat 12, Haarlem", lat: 52.3874, lng: 4.6462 },
-                "Zaandam": { adres: "Zuiddijk 85, Zaandam", lat: 52.4371, lng: 4.8276 },
-                "Utrecht": { adres: "Croeselaan 6, Utrecht", lat: 52.0812, lng: 5.1101 }
-            };
+
 
             let gebruikersLocatie = null;
             let alleLocatiesData = [];
@@ -178,7 +172,7 @@
 
                     // Only call .json() ONCE
                     const data = await response.json();
-
+                    // console.log(data);
                     if (!response.ok) {
                         console.error('API-error:', response.status, data);
                         throw new Error(data.message || 'API error');
@@ -190,15 +184,35 @@
                 }
             }
 
+            async function geocodeAddress(address) {
+                try {
+                    const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${Maps_API_KEY}`);
+                    const data = await response.json();
+                    
+                    if (data.results && data.results.length > 0) {
+                        return {
+                            lat: data.results[0].geometry.location.lat,
+                            lng: data.results[0].geometry.location.lng
+                        };
+                    }
+                    return null;
+                } catch (error) {
+                    console.error('Geocoding error:', error);
+                    return null;
+                }
+            }
+
+
             async function laadInitiëleLocaties() {
                 const container = document.getElementById("resultaten");
                 container.innerHTML = `<div class="status-balk">Locaties laden...</div>`;
 
                 try {
                     const typesResponse = await callProxy('getAppointmentTypes');
-                    console.log(typesResponse);
+                    console.log('Full API response:', typesResponse); // Debug log
+                    
                     if (!typesResponse || !typesResponse.Response.Objects || !typesResponse.Response.Objects.AppointmentType) {
-                        container.innerHTML = `<div class="status-balk error-balk">Geen afspraaktypen gevonden. Controleer de Netlify Function logs.</div>`;
+                        container.innerHTML = `<div class="status-balk error-balk">Geen afspraaktypen gevonden.</div>`;
                         return;
                     }
 
@@ -206,39 +220,61 @@
                         ? typesResponse.Response.Objects.AppointmentType
                         : [typesResponse.Response.Objects.AppointmentType];
 
-                    
-                    alleLocatiesData = appointmentTypes
-                    .filter(type => type.Name[0] === GEWENST_AFSPRAAKTYPE_NAAM)
-                        .map(type => {
-                            // const categoryName = type.Category?.Name;
-                            const categoryName = type.Category?.[0];
+                    // Process all locations in parallel with Promise.all
+                    const locationPromises = appointmentTypes
+                        .filter(type => type.Name && type.Name[0] === GEWENST_AFSPRAAKTYPE_NAAM)
+                        .map(async type => {
+                            const categoryName = type.Category?.[0] || '';
+                            const fullAddress = categoryName.split(':').pop().trim();
+                            const fullName = type.Name?.[0];
                             
-                            const cityKey = categoryName.split(":")[0].trim();
-                            const stamdata = locatieStamdata[cityKey];
-                            const fullname = type.Name?.[0];
-                            if (categoryName && stamdata) {
+                            // console.log('Processing:', { categoryName, fullAddress }); // Debug log
+
+                            if (!fullAddress) {
+                                console.warn('No address found for:', type);
+                                return null;
+                            }
+
+                            try {
+                                const coords = await geocodeAddress(fullAddress);
+                                if (!coords) {
+                                    console.warn('Geocoding failed for:', fullAddress);
+                                    return null;
+                                }
+
                                 return {
-                                    id: `locatie-${type.Id}`,
-                                    naam: categoryName,
-                                    adres: stamdata.adres,
-                                    lat: stamdata.lat,
-                                    lng: stamdata.lng,
-                                    fullName: fullname,
+                                    id: `locatie-${type.Id?.[0] || Date.now()}`,
+                                    naam: categoryName, // Get location name part
+                                    adres: fullAddress,
+                                    lat: coords.lat,
+                                    lng: coords.lng,
+                                    fullName: fullName,
                                     appointmentTypeId: type.Id,
-                                    bookingUrl: type.BookingUrl,
+                                    bookingUrl: type.BookingUrl?.[0],
                                     tijden: null,
                                     afstand: 0
                                 };
+                            } catch (error) {
+                                console.error('Error processing location:', error);
+                                return null;
                             }
-                            
-                            return null;
-                        })
-                        .filter(loc => loc !== null);
+                        });
+
+                    // Wait for all locations to be processed
+                    alleLocatiesData = (await Promise.all(locationPromises)).filter(loc => loc !== null);
                     
+                    // console.log('Processed locations:', alleLocatiesData); // Debug log
+                    
+                    if (alleLocatiesData.length === 0) {
+                        container.innerHTML = `<div class="status-balk error-balk">Geen geldige locaties gevonden.</div>`;
+                        return;
+                    }
+
                     renderLocatieSkelet();
                     laadBeschikbaarheidVoorZichtbareLocaties();
                 } catch (error) {
-                    container.innerHTML = `<div class="status-balk error-balk">Fout bij het laden van locaties. Controleer de browser console en Netlify Function logs.</div>`;
+                    console.error('Fout bij laden van locaties:', error);
+                    container.innerHTML = `<div class="status-balk error-balk">Fout bij het laden van locaties.</div>`;
                 }
             }
 
